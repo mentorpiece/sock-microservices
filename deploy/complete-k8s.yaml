@@ -1,0 +1,874 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-carts
+  labels:
+    name: socks-carts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-carts
+  template:
+    metadata:
+      labels:
+        name: socks-carts
+    spec:
+      containers:
+      - name: socks-carts
+        image: weaveworksdemos/carts:0.4.8
+        env:
+         - name: JAVA_OPTS
+           value: -Xms64m -Xmx128m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom -Dspring.zipkin.enabled=false -Dlogging.level.works.weave.socks=DEBUG
+        resources:
+          limits:
+            cpu: 200m
+            memory: 400Mi
+          requests:
+            cpu: 50m
+            memory: 150Mi
+        ports:
+        - containerPort: 80
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+              - all
+            add:
+              - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carts
+  annotations:
+        prometheus.io/scrape: 'true'
+  labels:
+    name: socks-carts
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    targetPort: 80
+  selector:
+    name: socks-carts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-carts-db
+  labels:
+    name: socks-carts-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-carts-db
+  template:
+    metadata:
+      labels:
+        name: socks-carts-db
+    spec:
+      containers:
+      - name: socks-carts-db
+        image: mongo:4.4
+        ports:
+        - name: mongo
+          containerPort: 27017
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carts-db
+  labels:
+    name: socks-carts-db
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 27017
+    targetPort: 27017
+  selector:
+    name: socks-carts-db
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-catalogue
+  labels:
+    name: socks-catalogue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-catalogue
+  template:
+    metadata:
+      labels:
+        name: socks-catalogue
+    spec:
+      containers:
+      - name: socks-catalogue
+        image: weaveworksdemos/catalogue:0.3.5
+        command: ["/app"]
+        args:
+        - -port=80
+        resources:
+          limits:
+            cpu: 200m
+            memory: 150Mi
+          requests:
+            cpu: 50m
+            memory: 100Mi
+        ports:
+        - containerPort: 80
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+              - all
+            add:
+              - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 300
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 180
+          periodSeconds: 3
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalogue
+  annotations:
+        prometheus.io/scrape: 'true'
+  labels:
+    name: socks-catalogue
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    targetPort: 80
+  selector:
+    name: socks-catalogue
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-catalogue-db
+  labels:
+    name: socks-catalogue-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-catalogue-db
+  template:
+    metadata:
+      labels:
+        name: socks-catalogue-db
+    spec:
+      containers:
+      - name: socks-catalogue-db
+        image: weaveworksdemos/catalogue-db:0.3.0
+        env:
+          - name: MYSQL_ROOT_PASSWORD
+            value: fake_password
+          - name: MYSQL_DATABASE
+            value: socksdb
+        ports:
+        - name: mysql
+          containerPort: 3306
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalogue-db
+  labels:
+    name: socks-catalogue-db
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 3306
+    targetPort: 3306
+  selector:
+    name: socks-catalogue-db
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-front-end
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-front-end
+  template:
+    metadata:
+      labels:
+        name: socks-front-end
+    spec:
+      containers:
+      - name: socks-front-end
+        image: weaveworksdemos/front-end:0.3.12
+        resources:
+          limits:
+            cpu: 200m
+            memory: 500Mi
+          requests:
+            cpu: 50m
+            memory: 200Mi
+        ports:
+        - containerPort: 8079
+        env:
+        - name: SESSION_REDIS
+          value: "true"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+              - all
+          readOnlyRootFilesystem: true
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8079
+          initialDelaySeconds: 300
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8079
+          initialDelaySeconds: 30
+          periodSeconds: 3
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: front-end
+  labels:
+    name: socks-front-end
+spec:
+  type: ClusterIP
+  selector:
+    name: socks-front-end
+  ports:
+  - name: http
+    port: 9090
+    targetPort: 8079
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: socks-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: socks.kuber.lab                   # <-- CHANGE_TO_YOUR_USER
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: front-end
+            port:
+              number: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-orders
+  labels:
+    name: socks-orders
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-orders
+  template:
+    metadata:
+      labels:
+        name: socks-orders
+    spec:
+      containers:
+      - name: socks-orders
+        image: weaveworksdemos/orders:0.4.7
+        env:
+         - name: JAVA_OPTS
+           value: -Xms64m -Xmx128m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom -Dspring.zipkin.enabled=false -Dlogging.level.works.weave.socks=DEBUG
+        resources:
+          limits:
+            cpu: 200m
+            memory: 400Mi
+          requests:
+            cpu: 50m
+            memory: 150Mi
+        ports:
+        - containerPort: 80
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+              - all
+            add:
+              - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+  annotations:
+        prometheus.io/scrape: 'true'
+  labels:
+    name: socks-orders
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    targetPort: 80
+  selector:
+    name: socks-orders
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-orders-db
+  labels:
+    name: socks-orders-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-orders-db
+  template:
+    metadata:
+      labels:
+        name: socks-orders-db
+    spec:
+      containers:
+      - name: socks-orders-db
+        image: mongo:4.4
+        ports:
+        - name: mongo
+          containerPort: 27017
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-db
+  labels:
+    name: socks-orders-db
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 27017
+    targetPort: 27017
+  selector:
+    name: socks-orders-db
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-payment
+  labels:
+    name: socks-payment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-payment
+  template:
+    metadata:
+      labels:
+        name: socks-payment
+    spec:
+      containers:
+      - name: payment
+        image: weaveworksdemos/payment:0.4.3
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 99m
+            memory: 100Mi
+        ports:
+        - containerPort: 80
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+              - all
+            add:
+              - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 300
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 180
+          periodSeconds: 3
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment
+  annotations:
+        prometheus.io/scrape: 'true'
+  labels:
+    name: socks-payment
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    targetPort: 80
+  selector:
+    name: socks-payment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-queue-master
+  labels:
+    name: socks-queue-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-queue-master
+  template:
+    metadata:
+      labels:
+        name: socks-queue-master
+    spec:
+      containers:
+      - name: socks-queue-master
+        image: weaveworksdemos/queue-master:0.3.1
+        env:
+         - name: JAVA_OPTS
+           value: -Xms64m -Xmx128m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom -Dspring.zipkin.enabled=false -Dlogging.level.works.weave.socks=DEBUG
+        resources:
+          limits:
+            cpu: 200m
+            memory: 400Mi
+          requests:
+            cpu: 50m
+            memory: 150Mi
+        ports:
+        - containerPort: 80
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: queue-master
+  annotations:
+        prometheus.io/scrape: 'true'
+  labels:
+    name: socks-queue-master
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    targetPort: 80
+  selector:
+    name: socks-queue-master
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-rabbitmq
+  labels:
+    name: socks-rabbitmq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-rabbitmq
+  template:
+    metadata:
+      labels:
+        name: socks-rabbitmq
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      containers:
+      - name: socks-rabbitmq
+        image: rabbitmq:3.6.8-management
+        ports:
+        - containerPort: 15672
+          name: management
+        - containerPort: 5672
+          name: rabbitmq
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+              - DAC_OVERRIDE
+          readOnlyRootFilesystem: true
+      - name: rabbitmq-exporter
+        image: kbudde/rabbitmq-exporter
+        ports:
+        - containerPort: 9090
+          name: exporter
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '9090'
+  labels:
+    name: socks-rabbitmq
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 5672
+    name: rabbitmq
+    targetPort: 5672
+  - port: 9090
+    name: exporter
+    targetPort: exporter
+    protocol: TCP
+  selector:
+    name: socks-rabbitmq
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-session-db
+  labels:
+    name: socks-session-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-session-db
+  template:
+    metadata:
+      labels:
+        name: socks-session-db
+      annotations:
+        prometheus.io.scrape: "false"
+    spec:
+      containers:
+      - name: socks-session-db
+        image: redis:alpine
+        ports:
+        - name: redis
+          containerPort: 6379
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: session-db
+  labels:
+    name: socks-session-db
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 6379
+    targetPort: 6379
+  selector:
+    name: socks-session-db
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-shipping
+  labels:
+    name: socks-shipping
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-shipping
+  template:
+    metadata:
+      labels:
+        name: socks-shipping
+    spec:
+      containers:
+      - name: socks-shipping
+        image: weaveworksdemos/shipping:0.4.8
+        env:
+         - name: ZIPKIN
+           value: zipkin.jaeger.svc.cluster.local
+         - name: JAVA_OPTS
+           value: -Xms64m -Xmx128m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom -Dspring.zipkin.enabled=false -Dlogging.level.works.weave.socks=DEBUG
+        resources:
+          limits:
+            cpu: 300m
+            memory: 400Mi
+          requests:
+            cpu: 50m
+            memory: 150Mi
+        ports:
+        - containerPort: 80
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+              - all
+            add:
+              - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shipping
+  annotations:
+        prometheus.io/scrape: 'true'
+  labels:
+    name: socks-shipping
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    targetPort: 80
+  selector:
+    name: socks-shipping
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-user
+  labels:
+    name: socks-user
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-user
+  template:
+    metadata:
+      labels:
+        name: socks-user
+    spec:
+      containers:
+      - name: socks-user
+        image: weaveworksdemos/user:0.4.7
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 50m
+            memory: 100Mi
+        ports:
+        - containerPort: 80
+        env:
+        - name: mongo
+          value: user-db:27017
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+              - all
+            add:
+              - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 300
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 180
+          periodSeconds: 3
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user
+  annotations:
+        prometheus.io/scrape: 'true'
+  labels:
+    name: socks-user
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 80
+    targetPort: 80
+  selector:
+    name: socks-user
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socks-user-db
+  labels:
+    name: socks-user-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: socks-user-db
+  template:
+    metadata:
+      labels:
+        name: socks-user-db
+    spec:
+      containers:
+      - name: socks-user-db
+        image: weaveworksdemos/user-db:0.3.0
+
+        ports:
+        - name: mongo
+          containerPort: 27017
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        kubernetes.io/os: linux
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-db
+  labels:
+    name: socks-user-db
+spec:
+  ports:
+    # the port that this service should serve on
+  - port: 27017
+    targetPort: 27017
+  selector:
+    name: socks-user-db
