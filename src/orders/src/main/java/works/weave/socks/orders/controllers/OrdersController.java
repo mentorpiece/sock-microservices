@@ -114,6 +114,10 @@ public class OrdersController {
                     amount);
             LOG.debug("Received data: " + order.toString());
 
+            Address daddress = order.getAddress();
+            daddress.setCountry("USA");
+            order.setAddress(daddress);
+
             CustomerOrder savedOrder = customerOrderRepository.save(order);
             LOG.debug("Saved order: " + savedOrder);
 
