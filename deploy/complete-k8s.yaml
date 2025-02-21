@@ -339,7 +339,7 @@ spec:
     spec:
       containers:
       - name: socks-orders
-        image: weaveworksdemos/orders:0.4.7
+        image: gnado/sock-orders:v0.1.0
         env:
          - name: JAVA_OPTS
            value: -Xms64m -Xmx128m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom -Dspring.zipkin.enabled=false -Dlogging.level.works.weave.socks=DEBUG
